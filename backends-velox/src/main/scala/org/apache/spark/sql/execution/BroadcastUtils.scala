@@ -150,6 +150,7 @@ object BroadcastUtils {
   }
 
   def serializeStream(batches: Iterator[ColumnarBatch]): ColumnarBatchSerializeResult = {
+    val mergeBatches = VeloxConfig.get.broadcastBuildMergeBatches
     val filtered = batches
       .filter(_.numRows() != 0)
       .map(
@@ -157,6 +158,48 @@ object BroadcastUtils {
           ColumnarBatches.retain(b)
           b
         })
+
+    if (mergeBatches) {
+      serializeStreamMerged(filtered)
+    } else {
+      serializeStreamPerBatch(filtered)
+    }
+  }
+
+  private def serializeStreamMerged(
+      filtered: Iterator[ColumnarBatch]): ColumnarBatchSerializeResult = {
+    var numRows: Long = 0
+    val handles = new ArrayBuffer[Long]()
+    val retainedBatches = new ArrayBuffer[ColumnarBatch]()
+    filtered.foreach {
+      b =>
+        numRows += b.numRows()
+        handles += ColumnarBatches.getNativeHandle(BackendsApiManager.getBackendName, b)
+        retainedBatches += b
+    }
+    if (handles.nonEmpty) {
+      try {
+        val jniWrapper = ColumnarBatchSerializerJniWrapper
+          .create(
+            Runtimes
+              .contextInstance(BackendsApiManager.getBackendName, "BroadcastUtils#serializeStream"))
+        val merged = jniWrapper.serializeAll(handles.toArray)
+        val useOffheapBroadcastBuildRelation =
+          VeloxConfig.get.enableBroadcastBuildRelationInOffheap
+        new ColumnarBatchSerializeResult(
+          useOffheapBroadcastBuildRelation,
+          numRows,
+          java.util.Collections.singletonList(merged))
+      } finally {
+        retainedBatches.foreach(ColumnarBatches.release)
+      }
+    } else {
+      ColumnarBatchSerializeResult.EMPTY
+    }
+  }
+
+  private def serializeStreamPerBatch(
+      filtered: Iterator[ColumnarBatch]): ColumnarBatchSerializeResult = {
     var numRows: Long = 0
     val values = filtered
       .map(
