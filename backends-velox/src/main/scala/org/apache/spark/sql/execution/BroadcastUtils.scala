@@ -184,6 +184,16 @@ object BroadcastUtils {
             Runtimes
               .contextInstance(BackendsApiManager.getBackendName, "BroadcastUtils#serializeStream"))
         val merged = jniWrapper.serializeAll(handles.toArray)
+
+        // Merging produces a single payload. Spark/Gluten broadcast serialization cannot handle
+        // a single buffer larger than 2GB, so fall back to per-batch serialization in that case.
+        if (merged.size() > Integer.MAX_VALUE) {
+          merged.toUnsafeByteArray.release()
+          val batchesToSerialize = retainedBatches.toArray
+          retainedBatches.clear()
+          return serializeStreamPerBatch(batchesToSerialize.iterator)
+        }
+
         val useOffheapBroadcastBuildRelation =
           VeloxConfig.get.enableBroadcastBuildRelationInOffheap
         new ColumnarBatchSerializeResult(

@@ -1316,8 +1316,9 @@ JNIEXPORT jobject JNICALL Java_org_apache_gluten_vectorized_ColumnarBatchSeriali
     jlongArray handles) {
   JNI_METHOD_START
   auto ctx = getRuntime(env, wrapper);
-  int32_t numBatches = env->GetArrayLength(handles);
-  GLUTEN_DCHECK(numBatches > 0, "serializeAll requires at least one batch");
+  GLUTEN_CHECK(handles != nullptr, "serializeAll requires non-null handles array");
+  const jsize numBatches = env->GetArrayLength(handles);
+  GLUTEN_CHECK(numBatches > 0, "serializeAll requires at least one batch");
 
   auto safeArray = getLongArrayElementsSafe(env, handles);
   auto serializer = ctx->createColumnarBatchSerializer(nullptr);

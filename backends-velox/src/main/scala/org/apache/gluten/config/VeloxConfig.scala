@@ -626,7 +626,8 @@ object VeloxConfig extends ConfigRegistry {
         "If enabled, all columnar batches in a broadcast build relation will be " +
           "serialized into a single buffer to reduce the number of addInput calls in " +
           "HashBuild operator. This can significantly improve BHJ performance when " +
-          "the broadcast table has many small batches.")
+          "the broadcast table has many small batches, but may increase driver-side " +
+          "peak memory and is not suitable for very large broadcasts.")
       .booleanConf
       .createWithDefault(false)
 
