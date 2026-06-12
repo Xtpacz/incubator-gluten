@@ -1071,6 +1071,10 @@ bool SubstraitToVeloxPlanValidator::validate(const ::substrait::JoinRel& joinRel
   }
 
   if (joinRel.has_post_join_filter()) {
+    if (!validateExpression(joinRel.post_join_filter(), rowType)) {
+      LOG_VALIDATION_MSG("Validation fails for join post filter expression.");
+      return false;
+    }
     auto expression = exprConverter_->toVeloxExpr(joinRel.post_join_filter(), rowType);
     exec::ExprSet exprSet({std::move(expression)}, execCtx_.get());
   }
