@@ -17,6 +17,8 @@
 package org.apache.spark.sql.catalyst.expressions
 
 import org.apache.gluten.expression._
+import org.apache.gluten.substrait.SubstraitContext
+import org.apache.gluten.utils.BackendTestUtils
 
 import org.apache.spark.sql.GlutenTestsTrait
 import org.apache.spark.sql.catalyst.analysis.{Analyzer, EmptyFunctionRegistry, UnresolvedAttribute}
@@ -133,6 +135,31 @@ class GlutenDecimalPrecisionSuite extends GlutenTestsTrait {
       checkType(Subtract(expr, u), DoubleType)
       checkType(Multiply(expr, u), DoubleType)
       checkType(Divide(expr, u), DoubleType)
+    }
+  }
+
+  test("CheckOverflow transformer casts transformed child type") {
+    if (BackendTestUtils.isVeloxBackendLoaded()) {
+      val targetType = DecimalType(38, 17)
+      val transformedChildType = DecimalType(38, 18)
+      val original = CheckOverflow(
+        Literal(Decimal(0, targetType.precision, targetType.scale), targetType),
+        targetType,
+        nullOnOverflow = true)
+      val child = LiteralTransformer(
+        Literal(
+          Decimal(0, transformedChildType.precision, transformedChildType.scale),
+          transformedChildType))
+      assert(original.child.dataType != child.dataType)
+
+      val transformedNode =
+        CheckOverflowTransformer(ExpressionNames.CHECK_OVERFLOW, child, original)
+          .doTransform(new SubstraitContext)
+          .toProtobuf
+      assert(transformedNode.hasCast)
+      val castType = transformedNode.getCast.getType.getDecimal
+      assert(castType.getPrecision == targetType.precision)
+      assert(castType.getScale == targetType.scale)
     }
   }
 }
